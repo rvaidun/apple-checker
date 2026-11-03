@@ -1,0 +1,14 @@
+[project]
+name = "apple-checker"
+version = "0.1.0"
+description = "Post Apple Store in-store pickup availability to a Discord webhook."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31"]
+
+[project.scripts]
+apple-checker = "apple_checker.checker:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

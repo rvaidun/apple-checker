@@ -1,0 +1,20 @@
+# systemd user service. Install with:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/apple-checker.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now apple-checker
+#   sudo loginctl enable-linger "$USER"   # keep running after you log out / across reboots
+[Unit]
+Description=Apple Store pickup availability checker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apple-checker
+ExecStart=%h/.local/bin/uv run --frozen apple-checker
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

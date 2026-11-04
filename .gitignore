@@ -1,5 +1,7 @@
 cookies.txt
 .env
+bag_session.json
+chrome-profile/
 .venv/
 __pycache__/
 *.egg-info/

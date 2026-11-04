@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Post Apple Store in-store pickup availability to a Discord webhook."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["requests>=2.31"]
+dependencies = [
+    "requests>=2.31",
+    "seleniumbase>=4.57.0",
+]
 
 [project.scripts]
 apple-checker = "apple_checker.checker:main"

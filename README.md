@@ -1,10 +1,10 @@
 # apple-checker
 
-Checks Apple Store in-store pickup availability every minute and posts the result to a
+Checks Apple Store in-store pickup availability every 30 minutes and posts the result to a
 Discord channel through a webhook:
 
-- **Nothing in stock:** `Nothing available for pickup`
-- **In stock:** tags the configured Discord users and lists each store with its
+- **Nothing in stock:** `[time] Nothing available for pickup`
+- **In stock:** `[time]`, tags the configured Discord users, and lists each store with its
   address, distance, phone number and a link to order
 
 Out of the box it watches the unlocked **iPhone Duo 1TB Night Sky** (`MK1L4LL/A`) and
@@ -12,12 +12,26 @@ Out of the box it watches the unlocked **iPhone Duo 1TB Night Sky** (`MK1L4LL/A`
 searches cover the Bay Area, the South Bay, Sacramento/Roseville, Modesto and Santa Rosa.
 Change them with `--part` and `--zip`.
 
+## How it checks
+
+1. **Availability API** (`/shop/fulfillment-messages`), using the browser cookies in
+   `cookies.txt`. Apple often rejects this with HTTP 541.
+2. **Bag search fallback** (what the bag page's "check availability" uses). The bot keeps
+   both iPhones in a bag that belongs to its own Chrome profile (`chrome-profile/`), saves
+   that bag's session to `bag_session.json`, and searches stores with plain HTTP requests.
+   When the saved session stops working, headless Chrome (SeleniumBase CDP mode) refreshes
+   it automatically, re-adding the iPhones to the bag if needed. Nothing is ever ordered.
+
+If both fail, it posts a ⚠️ warning that tags the users in `DISCORD_WARNING_TAG_USER_IDS`.
+
 ## Install on Linux
 
 ```bash
-# 1. Install uv (installs to ~/.local/bin)
+# 1. Install uv (installs to ~/.local/bin) and Google Chrome (for the bag fallback)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.bashrc   # or open a new shell so `uv` is on PATH
+wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install -y /tmp/chrome.deb
 
 # 2. Clone the repo (private: authenticate with `gh auth login` or an SSH key first)
 git clone git@github.com:rvaidun/apple-checker.git ~/apple-checker
@@ -29,7 +43,7 @@ uv sync
 # 4. Configure
 cp .env.example .env
 nano .env          # set DISCORD_WEBHOOK_URL, DISCORD_TAG_USER_IDS, DISCORD_WARNING_TAG_USER_IDS
-nano cookies.txt   # paste your Apple cookie header (see "Cookies" below)
+nano cookies.txt   # optional: your Apple cookie header (see "Cookies" below)
 chmod 600 .env cookies.txt
 
 # 5. Test
@@ -55,8 +69,8 @@ Edit `WorkingDirectory` / `ExecStart` if yours differ.
 
 ## Cookies
 
-Apple rejects requests that don't carry a real browser session (HTTP 541), so the bot sends
-the cookies from your browser. To get them:
+`cookies.txt` is only used by the availability API; the bag fallback manages its own session.
+To get them:
 
 1. In Chrome, open the product page, e.g.
    <https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-1tb-night-sky-unlocked>
@@ -64,14 +78,8 @@ the cookies from your browser. To get them:
 3. Click the `fulfillment-messages` request, find **Request Headers > cookie**, and copy its value
 4. Paste it as a single line into `cookies.txt`
 
-The bot saves the refreshed cookies Apple sends back, so a session lasts a while. When Apple
-does stop accepting it, the bot posts a ⚠️ warning to Discord, tagging the users in
-`DISCORD_WARNING_TAG_USER_IDS`. Paste a fresh cookie header
-into `cookies.txt` and the running bot picks it up on the next check; no restart needed.
-
-Apple may tie the session to your IP address. If the Linux box is on a different network
-than the browser you copied the cookies from, and checks fail right away with HTTP 541,
-copy the cookies from a browser on the same network as the box.
+The bot saves the refreshed cookies Apple sends back. A running bot picks up a new
+`cookies.txt` on the next check; no restart needed.
 
 ## Options
 
@@ -80,7 +88,7 @@ uv run apple-checker --help
 
   --part PART        part number to watch, repeatable (default: MK1L4LL/A MK1R4LL/A)
   --zip ZIP          ZIP to search near, repeatable (default: 94568 94108 95815 95123)
-  --interval SECS    seconds between checks (default: 60)
+  --interval SECS    seconds between checks (default: 1800 = 30 minutes)
   --cookies PATH     cookie header file (default: ./cookies.txt)
   --webhook URL      Discord webhook (default: $DISCORD_WEBHOOK_URL)
   --tag USER_ID      Discord user to tag when in stock, repeatable (default: $DISCORD_TAG_USER_IDS)
@@ -89,8 +97,10 @@ uv run apple-checker --help
   --test-webhook     send a tagged test message and exit
 ```
 
-To find a part number for another model, open its product page, then in DevTools > Network
-look at the `parts.0=` value in the `fulfillment-messages` request.
+To watch another model, add its part number and product page to `PRODUCTS` in
+`src/apple_checker/checker.py` (the bag fallback needs the page to add it to the bag).
+You can find a part number in DevTools > Network as the `parts.0=` value of the
+`fulfillment-messages` request on its product page.
 
 ## Update
 

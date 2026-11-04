@@ -28,7 +28,7 @@ uv sync
 
 # 4. Configure
 cp .env.example .env
-nano .env          # set DISCORD_WEBHOOK_URL and DISCORD_TAG_USER_IDS
+nano .env          # set DISCORD_WEBHOOK_URL, DISCORD_TAG_USER_IDS, DISCORD_WARNING_TAG_USER_IDS
 nano cookies.txt   # paste your Apple cookie header (see "Cookies" below)
 chmod 600 .env cookies.txt
 
@@ -65,7 +65,8 @@ the cookies from your browser. To get them:
 4. Paste it as a single line into `cookies.txt`
 
 The bot saves the refreshed cookies Apple sends back, so a session lasts a while. When Apple
-does stop accepting it, the bot posts a ⚠️ warning to Discord. Paste a fresh cookie header
+does stop accepting it, the bot posts a ⚠️ warning to Discord, tagging the users in
+`DISCORD_WARNING_TAG_USER_IDS`. Paste a fresh cookie header
 into `cookies.txt` and the running bot picks it up on the next check; no restart needed.
 
 Apple may tie the session to your IP address. If the Linux box is on a different network
@@ -83,6 +84,7 @@ uv run apple-checker --help
   --cookies PATH     cookie header file (default: ./cookies.txt)
   --webhook URL      Discord webhook (default: $DISCORD_WEBHOOK_URL)
   --tag USER_ID      Discord user to tag when in stock, repeatable (default: $DISCORD_TAG_USER_IDS)
+  --warn-tag USER_ID Discord user to tag on failure warnings, repeatable (default: $DISCORD_WARNING_TAG_USER_IDS)
   --once             run a single check and exit
   --test-webhook     send a tagged test message and exit
 ```

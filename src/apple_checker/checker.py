@@ -259,10 +259,12 @@ def availability_payload(hits, tag_user_ids):
     }
 
 
-def warning_payload(message):
+def warning_payload(message, tag_user_ids):
+    tags = "".join(f"<@{uid}> " for uid in tag_user_ids)
     return {
+        "allowed_mentions": {"parse": [], "users": list(tag_user_ids)},
         "content": (
-            f"⚠️ Apple checker is failing: {message}\n"
+            f"{tags}⚠️ Apple checker is failing: {message}\n"
             "If Apple rejected the session, open the product page in Chrome, then in "
             "DevTools > Network click the `fulfillment-messages` request, copy its "
             "`cookie` request header, and paste it into cookies.txt. "
@@ -304,7 +306,7 @@ def run(args):
             failures += 1
             log.warning("Check failed (%d in a row): %s", failures, e)
             if (e.blocked or failures >= FAILURES_BEFORE_ALERT) and not warned:
-                warned = send_discord(args.webhook, warning_payload(str(e)))
+                warned = send_discord(args.webhook, warning_payload(str(e), args.warn_tag))
 
         if args.once:
             return
@@ -313,7 +315,9 @@ def run(args):
 
 def main():
     load_dotenv(Path.cwd() / ".env")
-    env_tags = [t.strip() for t in os.environ.get("DISCORD_TAG_USER_IDS", "").split(",") if t.strip()]
+
+    def env_ids(name):
+        return [t.strip() for t in os.environ.get(name, "").split(",") if t.strip()]
 
     p = argparse.ArgumentParser(description="Post Apple Store pickup availability to Discord.")
     p.add_argument("--part", action="append", help=f"part number to watch, repeatable (default: {' '.join(PRODUCTS)})")
@@ -323,12 +327,14 @@ def main():
                    help="file holding the browser cookie header (default: ./cookies.txt)")
     p.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL"), help="Discord webhook URL (or set DISCORD_WEBHOOK_URL)")
     p.add_argument("--tag", action="append", help="Discord user ID to tag when in stock, repeatable (or set DISCORD_TAG_USER_IDS)")
+    p.add_argument("--warn-tag", action="append", help="Discord user ID to tag on failure warnings, repeatable (or set DISCORD_WARNING_TAG_USER_IDS)")
     p.add_argument("--once", action="store_true", help="run a single check and exit")
     p.add_argument("--test-webhook", action="store_true", help="send a test message to Discord and exit")
     args = p.parse_args()
     args.part = args.part or list(PRODUCTS)
     args.zip = args.zip or DEFAULT_ZIPS
-    args.tag = args.tag or env_tags
+    args.tag = args.tag or env_ids("DISCORD_TAG_USER_IDS")
+    args.warn_tag = args.warn_tag or env_ids("DISCORD_WARNING_TAG_USER_IDS")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
 

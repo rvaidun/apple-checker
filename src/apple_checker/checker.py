@@ -13,7 +13,7 @@ Run from a directory containing:
                  bag fallback works without it)
 
 Usage:
-    apple-checker                 # check every 30 minutes, forever
+    apple-checker                 # check every 15 minutes, forever
     apple-checker --once          # single check, then exit
     apple-checker --test-webhook  # send a test message to Discord
 """
@@ -343,7 +343,7 @@ def run(args):
         except CheckError as e:
             failures += 1
             log.warning("Check failed (%d in a row): %s", failures, e)
-            if not warned:  # warn once per outage; checks are 30 min apart
+            if not warned:  # warn once per outage; checks are 15 min apart
                 warned = send_discord(args.webhook, warning_payload(str(e), args.warn_tag))
 
         if args.once:
@@ -360,7 +360,7 @@ def main():
     p = argparse.ArgumentParser(description="Post Apple Store pickup availability to Discord.")
     p.add_argument("--part", action="append", help=f"part number to watch, repeatable (default: {' '.join(PRODUCTS)})")
     p.add_argument("--zip", action="append", help=f"ZIP to search near, repeatable (default: {' '.join(DEFAULT_ZIPS)})")
-    p.add_argument("--interval", type=int, default=1800, help="seconds between checks (default: 1800 = 30 min)")
+    p.add_argument("--interval", type=int, default=900, help="seconds between checks (default: 900 = 15 min)")
     p.add_argument("--cookies", type=Path, default=Path(os.environ.get("APPLE_COOKIES_FILE", "cookies.txt")),
                    help="file holding the browser cookie header (default: ./cookies.txt)")
     p.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL"), help="Discord webhook URL (or set DISCORD_WEBHOOK_URL)")

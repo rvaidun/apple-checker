@@ -1,6 +1,6 @@
 # apple-checker
 
-Checks Apple Store in-store pickup availability every 30 minutes and posts the result to a
+Checks Apple Store in-store pickup availability every 15 minutes and posts the result to a
 Discord channel through a webhook:
 
 - **Nothing in stock:** `[time] Nothing available for pickup`
@@ -88,7 +88,7 @@ uv run apple-checker --help
 
   --part PART        part number to watch, repeatable (default: MK1L4LL/A MK1R4LL/A)
   --zip ZIP          ZIP to search near, repeatable (default: 94568 94108 95815 95123)
-  --interval SECS    seconds between checks (default: 1800 = 30 minutes)
+  --interval SECS    seconds between checks (default: 900 = 15 minutes)
   --cookies PATH     cookie header file (default: ./cookies.txt)
   --webhook URL      Discord webhook (default: $DISCORD_WEBHOOK_URL)
   --tag USER_ID      Discord user to tag when in stock, repeatable (default: $DISCORD_TAG_USER_IDS)

@@ -25,6 +25,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -43,6 +44,7 @@ FALLBACK_PRODUCT_URL = "https://www.apple.com/shop/buy-iphone/iphone-duo"
 DEFAULT_ZIPS = ["94568", "94108", "95815", "95123"]
 
 NOTHING_AVAILABLE_MESSAGE = "Nothing available for pickup"
+DISPLAY_TZ = ZoneInfo("America/Los_Angeles")  # all watched stores are in California
 FAILURES_BEFORE_ALERT = 3
 SECONDS_BETWEEN_ZIPS = 2
 
@@ -215,6 +217,12 @@ def send_discord(webhook_url, payload):
     return False
 
 
+def stamp(text):
+    """Prefix a message with the current Pacific time, e.g. "[2026-11-03 4:02:10 PM PST] ..."."""
+    now = datetime.now(DISPLAY_TZ)
+    return f"[{now:%Y-%m-%d} {int(now.strftime('%I'))}:{now:%M:%S %p %Z}] {text}"
+
+
 def availability_payload(hits, tag_user_ids):
     order = {part: i for i, part in enumerate(PRODUCTS)}  # 1TB first, then 2TB
     by_part = {}
@@ -222,7 +230,7 @@ def availability_payload(hits, tag_user_ids):
         by_part.setdefault(h["part"], []).append(h)
 
     tags = " ".join(f"<@{uid}>" for uid in tag_user_ids)
-    lines = [f"{tags} **In stock for pickup!**".strip()]
+    lines = [stamp(f"{tags} **In stock for pickup!**".strip())]
     embeds = []
     for part, part_hits in by_part.items():
         title = part_hits[0]["title"]
@@ -290,7 +298,7 @@ def run(args):
                 send_discord(args.webhook, availability_payload(hits.values(), args.tag))
             else:
                 log.info("%s (%d stores near %s)", NOTHING_AVAILABLE_MESSAGE, store_count, zips)
-                send_discord(args.webhook, {"content": NOTHING_AVAILABLE_MESSAGE, "allowed_mentions": {"parse": []}})
+                send_discord(args.webhook, {"content": stamp(NOTHING_AVAILABLE_MESSAGE), "allowed_mentions": {"parse": []}})
 
         except CheckError as e:
             failures += 1

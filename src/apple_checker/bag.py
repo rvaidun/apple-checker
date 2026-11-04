@@ -121,10 +121,36 @@ def refresh_session(profile_dir, products):
         if not headers:
             raise BagError("couldn't find the bag's request headers on the bag page")
         cookies = {c.name: c.value for c in sb.get_all_cookies() if "apple.com" in (c.domain or "")}
+        user_agent = page_js("navigator.userAgent")
     finally:
         sb.driver.stop()
 
-    return {"cookies": cookies, "headers": headers, "items": items, "refreshed_at": int(time.time())}
+    return {
+        "cookies": cookies,
+        "headers": headers,
+        "items": items,
+        "user_agent": user_agent,
+        "refreshed_at": int(time.time()),
+    }
+
+
+def browser_headers(user_agent):
+    """Headers that match the browser which created the session.
+
+    Apple ties the bag session to that browser: the same cookies sent with a different
+    user agent (e.g. Mac headers from a Linux box) get HTTP 541.
+    """
+    if not user_agent:
+        return {}
+    m = re.search(r"Chrome/(\d+)", user_agent)
+    major = m.group(1) if m else "0"
+    platform = "macOS" if "Macintosh" in user_agent else "Windows" if "Windows" in user_agent else "Linux"
+    return {
+        "user-agent": user_agent,
+        "sec-ch-ua": f'"Google Chrome";v="{major}", "Chromium";v="{major}", "Not:A-Brand";v="24"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": f'"{platform}"',
+    }
 
 
 # --- store search --------------------------------------------------------------
@@ -142,6 +168,7 @@ def search_zip(session, zip_code, parts, base_headers):
             SEARCH_URL.format(item=item),
             headers={
                 **base_headers,
+                **browser_headers(session.get("user_agent")),
                 **session["headers"],
                 "content-type": "application/x-www-form-urlencoded",
                 "x-requested-with": "Fetch",

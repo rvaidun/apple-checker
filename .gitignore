@@ -6,3 +6,4 @@ chrome-profile/
 __pycache__/
 *.egg-info/
 dist/
+downloaded_files/

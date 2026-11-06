@@ -3,14 +3,13 @@
 Every check posts one message: "Nothing available for pickup", or the stores that
 have stock (with addresses) and a tag for each configured Discord user.
 
-Each check first tries Apple's fulfillment-messages API (using cookies.txt). If Apple
-rejects it, the check falls back to the shopping bag's store search (see bag.py),
+Each check first tries Apple's fulfillment-messages API, using cookies the bot gets from
+a fresh headless Chrome (saved in api_session.json and renewed when Apple rejects them).
+If that fails, the check falls back to the shopping bag's store search (see bag.py),
 which keeps its own session and refreshes it with headless Chrome when needed.
 
 Run from a directory containing:
-    .env         DISCORD_WEBHOOK_URL=..., DISCORD_TAG_USER_IDS=..., DISCORD_WARNING_TAG_USER_IDS=...
-    cookies.txt  the `cookie` request header copied from your browser (optional; the
-                 bag fallback works without it)
+    .env  DISCORD_WEBHOOK_URL=..., DISCORD_TAG_USER_IDS=..., DISCORD_WARNING_TAG_USER_IDS=...
 
 Usage:
     apple-checker                 # check every 15 minutes, forever
@@ -19,13 +18,16 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import os
 import random
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import requests
@@ -46,7 +48,8 @@ FALLBACK_PRODUCT_URL = "https://www.apple.com/shop/buy-iphone/iphone-duo"
 # South Bay (Oakridge, Los Gatos), Sacramento/Roseville, Modesto and Santa Rosa.
 DEFAULT_ZIPS = ["94568", "94108", "95815", "95123"]
 
-# Files the bag fallback manages itself (relative to the working directory).
+# Files the bot manages itself (relative to the working directory).
+API_SESSION_FILE = Path("api_session.json")
 BAG_SESSION_FILE = Path("bag_session.json")
 BROWSER_PROFILE_DIR = Path("chrome-profile")
 
@@ -90,24 +93,9 @@ def load_dotenv(path):
             os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
 
 
-def load_cookies(path):
-    """Parse a raw `Cookie:` header string ("a=1; b=2") from file into a dict."""
-    cookies = {}
-    for pair in path.read_text().strip().split(";"):
-        name, sep, value = pair.strip().partition("=")
-        if sep and name:
-            cookies[name] = value
-    return cookies
-
-
-def save_cookies(path, cookies):
-    path.write_text("; ".join(f"{k}={v}" for k, v in cookies.items()) + "\n")
-
-
 # --- primary source: fulfillment-messages API ---------------------------------
 
-def fetch_availability(parts, zip_code, cookies):
-    """Return (json, refreshed_cookies) from Apple's fulfillment endpoint."""
+def fulfillment_params(parts, zip_code):
     params = {
         "fae": "true",
         "pl": "true",
@@ -118,13 +106,61 @@ def fetch_availability(parts, zip_code, cookies):
     }
     for i, part in enumerate(parts):
         params[f"parts.{i}"] = part
+    return params
 
+
+def refresh_api_session(parts, zip_code):
+    """Get fresh API cookies from a brand-new headless Chrome and save them.
+
+    Apple rejects stale cookies with HTTP 541, but cookies from a real Chrome that just
+    loaded a product page and called the API work from plain requests, as long as the
+    requests send that browser's user agent.
+    """
+    from seleniumbase import sb_cdp  # heavy import, only needed when refreshing
+
+    log.info("Getting fresh fulfillment API cookies with headless Chrome")
+    api_url = f"{FULFILLMENT_URL}?{urlencode(fulfillment_params(parts, zip_code))}"
+    with tempfile.TemporaryDirectory(prefix="apple-checker-chrome-", ignore_cleanup_errors=True) as profile:
+        try:
+            sb = sb_cdp.Chrome(PRODUCTS.get(parts[0], FALLBACK_PRODUCT_URL), headless=True, user_data_dir=profile)
+        except Exception as e:
+            raise CheckError(f"couldn't start Chrome: {type(e).__name__}: {e}") from e
+        try:
+            def page_js(expression):
+                return sb.loop.run_until_complete(sb.page.evaluate(expression, await_promise=True))
+
+            sb.sleep(8)
+            status = page_js(
+                f"fetch({json.dumps(api_url)}, {{credentials: 'include', headers: {{'x-requested-with': 'Fetch'}}}})"
+                ".then(r => r.status)"
+            )
+            cookies = {c.name: c.value for c in sb.get_all_cookies() if "apple.com" in (c.domain or "")}
+            user_agent = page_js("navigator.userAgent")
+        except Exception as e:
+            raise CheckError(f"Chrome cookie refresh failed: {type(e).__name__}: {e}") from e
+        finally:
+            sb.driver.stop()
+
+    if status != 200:
+        raise CheckError(f"HTTP {status} even from inside Chrome")
+    session = {"cookies": cookies, "user_agent": user_agent, "refreshed_at": int(time.time())}
+    bag.save_session(API_SESSION_FILE, session)
+    return session
+
+
+def fetch_availability(parts, zip_code, session):
+    """Return (json, refreshed_cookies) from Apple's fulfillment endpoint."""
     try:
         resp = requests.get(
             FULFILLMENT_URL,
-            params=params,
-            headers={**HEADERS, "referer": PRODUCTS.get(parts[0], FALLBACK_PRODUCT_URL)},
-            cookies=cookies,
+            params=fulfillment_params(parts, zip_code),
+            headers={
+                **HEADERS,
+                **bag.browser_headers(session.get("user_agent")),  # must match the cookies' browser
+                "referer": PRODUCTS.get(parts[0], FALLBACK_PRODUCT_URL),
+                "x-requested-with": "Fetch",
+            },
+            cookies=session["cookies"],
             timeout=20,
         )
     except requests.RequestException as e:
@@ -193,19 +229,27 @@ def merge_zips(zips, check_zip):
     return hits, len(store_ids)
 
 
-def check_fulfillment_api(parts, zips, cookie_path):
-    if not cookie_path.exists():
-        raise CheckError(f"{cookie_path} not found")
-    cookies = load_cookies(cookie_path)  # re-read each check so you can refresh it live
+def api_search_zip(session, zip_code, parts):
+    data, refreshed = fetch_availability(parts, zip_code, session)
+    session["cookies"].update(refreshed)  # keep cookies Apple rotates
+    return find_available(data, parts, zip_code)
 
-    def check_zip(zip_code):
-        data, refreshed = fetch_availability(parts, zip_code, cookies)
-        if refreshed and any(cookies.get(k) != v for k, v in refreshed.items()):
-            cookies.update(refreshed)
-            save_cookies(cookie_path, cookies)
-        return find_available(data, parts, zip_code)
 
-    return merge_zips(zips, check_zip)
+def check_fulfillment_api(parts, zips):
+    session = bag.load_session(API_SESSION_FILE)
+    fresh = not (session and "cookies" in session)
+    if fresh:
+        session = refresh_api_session(parts, zips[0])
+    try:
+        result = merge_zips(zips, lambda z: api_search_zip(session, z, parts))
+    except CheckError as e:
+        if fresh:  # brand-new cookies were rejected too; another refresh won't help
+            raise
+        log.info("Fulfillment API cookies stopped working (%s); getting fresh ones", e)
+        session = refresh_api_session(parts, zips[0])
+        result = merge_zips(zips, lambda z: api_search_zip(session, z, parts))
+    bag.save_session(API_SESSION_FILE, session)
+    return result
 
 
 def check_bag(parts, zips):
@@ -223,7 +267,7 @@ def check_bag(parts, zips):
 def check(args):
     """Try the fulfillment API, then the bag search. Returns (hits, store_count, source)."""
     try:
-        return (*check_fulfillment_api(args.part, args.zip, args.cookies), "fulfillment API")
+        return (*check_fulfillment_api(args.part, args.zip), "fulfillment API")
     except CheckError as e:
         api_error = e
         log.warning("Fulfillment API failed (%s); falling back to the bag search", e)
@@ -304,10 +348,8 @@ def warning_payload(message, tag_user_ids):
         "allowed_mentions": {"parse": [], "users": list(tag_user_ids)},
         "content": (
             f"{tags}⚠️ Apple checker is failing: {message[:1500]}\n"
-            "Both the availability API and the bag-search fallback failed. Check the logs with "
-            "`journalctl --user -u apple-checker -e`. To fix the API, open the product page in "
-            "Chrome, copy the `cookie` request header of the `fulfillment-messages` request from "
-            "DevTools > Network, and paste it into cookies.txt; the bot picks it up on the next check."
+            "Both the availability API (even with fresh cookies from headless Chrome) and the "
+            "bag-search fallback failed. Check the logs with `journalctl --user -u apple-checker -e`."
         ),
     }
 
@@ -361,8 +403,6 @@ def main():
     p.add_argument("--part", action="append", help=f"part number to watch, repeatable (default: {' '.join(PRODUCTS)})")
     p.add_argument("--zip", action="append", help=f"ZIP to search near, repeatable (default: {' '.join(DEFAULT_ZIPS)})")
     p.add_argument("--interval", type=int, default=900, help="seconds between checks (default: 900 = 15 min)")
-    p.add_argument("--cookies", type=Path, default=Path(os.environ.get("APPLE_COOKIES_FILE", "cookies.txt")),
-                   help="file holding the browser cookie header (default: ./cookies.txt)")
     p.add_argument("--webhook", default=os.environ.get("DISCORD_WEBHOOK_URL"), help="Discord webhook URL (or set DISCORD_WEBHOOK_URL)")
     p.add_argument("--tag", action="append", help="Discord user ID to tag when in stock, repeatable (or set DISCORD_TAG_USER_IDS)")
     p.add_argument("--warn-tag", action="append", help="Discord user ID to tag on failure warnings, repeatable (or set DISCORD_WARNING_TAG_USER_IDS)")

@@ -14,8 +14,11 @@ Change them with `--part` and `--zip`.
 
 ## How it checks
 
-1. **Availability API** (`/shop/fulfillment-messages`), using the browser cookies in
-   `cookies.txt`. Apple often rejects this with HTTP 541.
+1. **Availability API** (`/shop/fulfillment-messages`). Apple rejects stale cookies with
+   HTTP 541, so the bot gets its own: a brand-new headless Chrome visits the product page
+   and calls the API once, and the bot reuses that browser's cookies and user agent for
+   plain HTTP requests (saved in `api_session.json`). When Apple rejects them, it gets
+   fresh ones the same way.
 2. **Bag search fallback** (what the bag page's "check availability" uses). The bot keeps
    both iPhones in a bag that belongs to its own Chrome profile (`chrome-profile/`), saves
    that bag's session to `bag_session.json`, and searches stores with plain HTTP requests.
@@ -27,7 +30,7 @@ If both fail, it posts a ⚠️ warning that tags the users in `DISCORD_WARNING_
 ## Install on Linux
 
 ```bash
-# 1. Install uv (installs to ~/.local/bin) and Google Chrome (for the bag fallback)
+# 1. Install uv (installs to ~/.local/bin) and Google Chrome (the bot drives it headless)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.bashrc   # or open a new shell so `uv` is on PATH
 wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
@@ -43,8 +46,7 @@ uv sync
 # 4. Configure
 cp .env.example .env
 nano .env          # set DISCORD_WEBHOOK_URL, DISCORD_TAG_USER_IDS, DISCORD_WARNING_TAG_USER_IDS
-nano cookies.txt   # optional: your Apple cookie header (see "Cookies" below)
-chmod 600 .env cookies.txt
+chmod 600 .env
 
 # 5. Test
 uv run apple-checker --test-webhook   # sends a tagged test message to Discord
@@ -69,17 +71,10 @@ Edit `WorkingDirectory` / `ExecStart` if yours differ.
 
 ## Cookies
 
-`cookies.txt` is only used by the availability API; the bag fallback manages its own session.
-To get them:
-
-1. In Chrome, open the product page, e.g.
-   <https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-1tb-night-sky-unlocked>
-2. Open DevTools (F12), go to **Network**, and click **Check availability** on the page
-3. Click the `fulfillment-messages` request, find **Request Headers > cookie**, and copy its value
-4. Paste it as a single line into `cookies.txt`
-
-The bot saves the refreshed cookies Apple sends back. A running bot picks up a new
-`cookies.txt` on the next check; no restart needed.
+There's nothing to copy by hand. The bot gets Apple cookies from its own headless Chrome
+and keeps them in `api_session.json` (API) and `bag_session.json` (bag search). Apple ties
+cookies to the browser that made them, so cookies pasted from your own Chrome don't work.
+Delete either file to make the bot get fresh ones on the next check.
 
 ## Options
 
@@ -89,7 +84,6 @@ uv run apple-checker --help
   --part PART        part number to watch, repeatable (default: MK1L4LL/A MK1R4LL/A)
   --zip ZIP          ZIP to search near, repeatable (default: 94568 94108 95815 95123)
   --interval SECS    seconds between checks (default: 900 = 15 minutes)
-  --cookies PATH     cookie header file (default: ./cookies.txt)
   --webhook URL      Discord webhook (default: $DISCORD_WEBHOOK_URL)
   --tag USER_ID      Discord user to tag when in stock, repeatable (default: $DISCORD_TAG_USER_IDS)
   --warn-tag USER_ID Discord user to tag on failure warnings, repeatable (default: $DISCORD_WARNING_TAG_USER_IDS)

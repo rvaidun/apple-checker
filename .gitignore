@@ -1,5 +1,6 @@
 cookies.txt
 .env
+api_session.json
 bag_session.json
 chrome-profile/
 .venv/

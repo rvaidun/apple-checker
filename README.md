@@ -7,8 +7,9 @@ Discord channel through a webhook:
 - **In stock:** `[time]`, tags the configured Discord users, and lists each store with its
   address, distance, phone number and a link to order
 
-Out of the box it watches the unlocked **iPhone Duo 1TB Night Sky** (`MK1L4LL/A`) and
-**2TB Night Sky** (`MK1R4LL/A`) near ZIPs 94568, 94108, 95815 and 95123. Those four
+Out of the box it watches the unlocked **iPhone Duo Night Sky** in every storage size:
+256GB (`MK1F4LL/A`), 512GB (`MK1H4LL/A`), 1TB (`MK1L4LL/A`) and 2TB (`MK1R4LL/A`), near
+ZIPs 94568, 94108, 95815 and 95123. Those four
 searches cover the Bay Area, the South Bay, Sacramento/Roseville, Modesto and Santa Rosa.
 Change them with `--part` and `--zip`.
 
@@ -20,7 +21,7 @@ Change them with `--part` and `--zip`.
    plain HTTP requests (saved in `api_session.json`). When Apple rejects them, it gets
    fresh ones the same way.
 2. **Bag search fallback** (what the bag page's "check availability" uses). The bot keeps
-   both iPhones in a bag that belongs to its own Chrome profile (`chrome-profile/`), saves
+   every watched iPhone in a bag that belongs to its own Chrome profile (`chrome-profile/`), saves
    that bag's session to `bag_session.json`, and searches stores with plain HTTP requests.
    When the saved session stops working, headless Chrome (SeleniumBase CDP mode) refreshes
    it automatically, re-adding the iPhones to the bag if needed. Nothing is ever ordered.
@@ -81,7 +82,7 @@ Delete either file to make the bot get fresh ones on the next check.
 ```
 uv run apple-checker --help
 
-  --part PART        part number to watch, repeatable (default: MK1L4LL/A MK1R4LL/A)
+  --part PART        part number to watch, repeatable (default: MK1F4LL/A MK1H4LL/A MK1L4LL/A MK1R4LL/A)
   --zip ZIP          ZIP to search near, repeatable (default: 94568 94108 95815 95123)
   --interval SECS    seconds between checks (default: 900 = 15 minutes)
   --webhook URL      Discord webhook (default: $DISCORD_WEBHOOK_URL)

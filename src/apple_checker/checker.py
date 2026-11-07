@@ -38,7 +38,10 @@ FULFILLMENT_URL = "https://www.apple.com/shop/fulfillment-messages"
 
 # Part number -> product page linked in alerts (and used to add it to the fallback bag).
 # Part numbers are shared across carriers; cppart=UNLOCKED/US selects the unlocked model.
+# Alerts list the models in this order.
 PRODUCTS = {
+    "MK1F4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-256gb-night-sky-unlocked",
+    "MK1H4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-512gb-night-sky-unlocked",
     "MK1L4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-1tb-night-sky-unlocked",
     "MK1R4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-2tb-night-sky-unlocked",
 }
@@ -307,7 +310,7 @@ def stamp(text):
 
 
 def availability_payload(hits, tag_user_ids):
-    order = {part: i for i, part in enumerate(PRODUCTS)}  # 1TB first, then 2TB
+    order = {part: i for i, part in enumerate(PRODUCTS)}  # smallest storage first
     by_part = {}
     for h in sorted(hits, key=lambda h: (order.get(h["part"], len(order)), h["miles"])):
         by_part.setdefault(h["part"], []).append(h)

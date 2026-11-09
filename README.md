@@ -7,11 +7,19 @@ Discord channel through a webhook:
 - **In stock:** `[time]`, tags the configured Discord users, and lists each store with its
   address, distance, phone number and a link to order
 
-Out of the box it watches the unlocked **iPhone Duo Night Sky** in every storage size:
-256GB (`MK1F4LL/A`), 512GB (`MK1H4LL/A`), 1TB (`MK1L4LL/A`) and 2TB (`MK1R4LL/A`), near
-ZIPs 94568, 94108, 95815 and 95123. Those four
-searches cover the Bay Area, the South Bay, Sacramento/Roseville, Modesto and Santa Rosa.
-Change them with `--part` and `--zip`.
+Out of the box it watches every unlocked **iPhone Duo**, in both colors and all four
+storage sizes:
+
+| Storage | Night Sky   | Star White  |
+|---------|-------------|-------------|
+| 256GB   | `MK1F4LL/A` | `MK1E4LL/A` |
+| 512GB   | `MK1H4LL/A` | `MK1G4LL/A` |
+| 1TB     | `MK1L4LL/A` | `MK1J4LL/A` |
+| 2TB     | `MK1R4LL/A` | `MK1Q4LL/A` |
+
+It searches near ZIPs 94568, 94108, 95815 and 95123. Those four searches cover the Bay
+Area, the South Bay, Sacramento/Roseville, Modesto and Santa Rosa. Change them with
+`--part` and `--zip`.
 
 ## How it checks
 
@@ -82,7 +90,7 @@ Delete either file to make the bot get fresh ones on the next check.
 ```
 uv run apple-checker --help
 
-  --part PART        part number to watch, repeatable (default: MK1F4LL/A MK1H4LL/A MK1L4LL/A MK1R4LL/A)
+  --part PART        part number to watch, repeatable (default: all eight models above)
   --zip ZIP          ZIP to search near, repeatable (default: 94568 94108 95815 95123)
   --interval SECS    seconds between checks (default: 900 = 15 minutes)
   --webhook URL      Discord webhook (default: $DISCORD_WEBHOOK_URL)

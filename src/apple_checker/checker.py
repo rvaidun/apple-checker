@@ -41,9 +41,13 @@ FULFILLMENT_URL = "https://www.apple.com/shop/fulfillment-messages"
 # Alerts list the models in this order.
 PRODUCTS = {
     "MK1F4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-256gb-night-sky-unlocked",
+    "MK1E4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-256gb-star-white-unlocked",
     "MK1H4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-512gb-night-sky-unlocked",
+    "MK1G4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-512gb-star-white-unlocked",
     "MK1L4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-1tb-night-sky-unlocked",
+    "MK1J4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-1tb-star-white-unlocked",
     "MK1R4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-2tb-night-sky-unlocked",
+    "MK1Q4LL/A": "https://www.apple.com/shop/buy-iphone/iphone-duo/7.6-inch-display-2tb-star-white-unlocked",
 }
 FALLBACK_PRODUCT_URL = "https://www.apple.com/shop/buy-iphone/iphone-duo"
 
@@ -309,7 +313,20 @@ def stamp(text):
     return f"[{now:%Y-%m-%d} {int(now.strftime('%I'))}:{now:%M:%S %p %Z}] {text}"
 
 
-def availability_payload(hits, tag_user_ids):
+def embed_length(embed):
+    """Characters Discord counts toward its 6000-per-message embed limit."""
+    fields = embed.get("fields", [])
+    return (len(embed.get("title", "")) + len(embed.get("description", ""))
+            + len((embed.get("footer") or {}).get("text", ""))
+            + sum(len(f["name"]) + len(f["value"]) for f in fields))
+
+
+def availability_payloads(hits, tag_user_ids):
+    """Build the in-stock alert as one or more webhook messages.
+
+    The first message has the tags and summary; embeds are spread across as many
+    messages as Discord's limits (10 embeds and 6000 embed characters each) need.
+    """
     order = {part: i for i, part in enumerate(PRODUCTS)}  # smallest storage first
     by_part = {}
     for h in sorted(hits, key=lambda h: (order.get(h["part"], len(order)), h["miles"])):
@@ -337,12 +354,22 @@ def availability_payload(hits, tag_user_ids):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-    return {
+    batches = [[]]
+    for embed in embeds:
+        batch = batches[-1]
+        if batch and (len(batch) == 10 or sum(map(embed_length, batch)) + embed_length(embed) > 6000):
+            batch = []
+            batches.append(batch)
+        batch.append(embed)
+
+    payloads = [{
         "content": "\n".join(lines)[:2000],  # Discord's message length limit
-        "embeds": embeds[:10],
+        "embeds": batches[0],
         # Ping only the listed users, never @everyone/@here or roles.
         "allowed_mentions": {"parse": [], "users": list(tag_user_ids)},
-    }
+    }]
+    payloads += [{"embeds": batch, "allowed_mentions": {"parse": []}} for batch in batches[1:]]
+    return payloads
 
 
 def warning_payload(message, tag_user_ids):
@@ -380,7 +407,8 @@ def run(args):
             if hits:
                 log.info("AVAILABLE via %s: %s", source,
                          ", ".join(f"{h['store_name']} ({h['title']})" for h in hits.values()))
-                send_discord(args.webhook, availability_payload(hits.values(), args.tag))
+                for payload in availability_payloads(hits.values(), args.tag):
+                    send_discord(args.webhook, payload)
             else:
                 log.info("%s (%d stores near %s, via %s)", NOTHING_AVAILABLE_MESSAGE, store_count, zips, source)
                 send_discord(args.webhook, {"content": stamp(NOTHING_AVAILABLE_MESSAGE), "allowed_mentions": {"parse": []}})
